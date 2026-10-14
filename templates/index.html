@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YOLOv8 Real-Time Object Detection</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        header {
+            text-align: center;
+            padding: 30px 20px 10px;
+        }
+
+        header h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            background: linear-gradient(90deg, #00d2ff, #3a7bd5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        header p {
+            color: #aaa;
+            margin-top: 6px;
+            font-size: 0.95rem;
+        }
+
+        .container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 24px;
+            padding: 20px;
+            max-width: 1200px;
+            width: 100%;
+        }
+
+        .video-panel {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .video-panel h3 {
+            margin-bottom: 10px;
+            font-size: 1rem;
+            color: #ccc;
+        }
+
+        video,
+        #outputFrame {
+            border-radius: 12px;
+            max-width: 560px;
+            width: 100%;
+            background: #000;
+        }
+
+        #outputFrame {
+            min-height: 300px;
+        }
+
+        .controls {
+            margin: 20px 0;
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 12px 28px;
+            font-size: 1rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        #startBtn {
+            background: linear-gradient(135deg, #00d2ff, #3a7bd5);
+            color: #fff;
+        }
+
+        #startBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 210, 255, 0.4);
+        }
+
+        #stopBtn {
+            background: linear-gradient(135deg, #ff416c, #ff4b2b);
+            color: #fff;
+        }
+
+        #stopBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 65, 108, 0.4);
+        }
+
+        #stopBtn:disabled,
+        #startBtn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .stats-bar {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .stat {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 10px;
+            padding: 10px 20px;
+            text-align: center;
+            min-width: 120px;
+        }
+
+        .stat .label {
+            font-size: 0.75rem;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat .value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #00d2ff;
+            margin-top: 4px;
+        }
+
+        .detection-list {
+            max-width: 800px;
+            width: 100%;
+            padding: 0 20px 40px;
+        }
+
+        .detection-list h3 {
+            text-align: center;
+            margin-bottom: 12px;
+            color: #ccc;
+        }
+
+        #detectionTable {
+            width: 100%;
+            border-collapse: collapse;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        #detectionTable th {
+            background: rgba(0, 210, 255, 0.15);
+            padding: 12px;
+            text-align: left;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #00d2ff;
+        }
+
+        #detectionTable td {
+            padding: 10px 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 0.9rem;
+        }
+
+        .confidence-bar {
+            width: 60px;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            display: inline-block;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            border-radius: 4px;
+            background: linear-gradient(90deg, #ff416c, #00d2ff);
+        }
+
+        .status {
+            text-align: center;
+            padding: 8px;
+            font-size: 0.9rem;
+            color: #888;
+        }
+
+        .status.connected {
+            color: #4caf50;
+        }
+
+        .status.error {
+            color: #ff416c;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>YOLOv8 Real-Time Object Detection</h1>
+        <p>Webcam-based detection powered by Ultralytics YOLOv8 &amp; FastAPI</p>
+    </header>
+    <div id="statusBar" class="status">Click "Start Detection" to begin</div>
+    <div class="controls">
+        <button id="startBtn" onclick="startDetection()">Start Detection</button>
+        <button id="stopBtn" onclick="stopDetection()" disabled>Stop Detection</button>
+    </div>
+    <div class="stats-bar">
+        <div class="stat">
+            <div class="label">Objects</div>
+            <div class="value" id="objectCount">0</div>
+        </div>
+        <div class="stat">
+            <div class="label">FPS</div>
+            <div class="value" id="fpsCount">0</div>
+        </div>
+        <div class="stat">
+            <div class="label">Status</div>
+            <div class="value" id="connStatus" style="font-size:1rem;">Idle</div>
+        </div>
+    </div>
+    <div class="container">
+        <div class="video-panel">
+            <h3>Webcam Feed</h3>
+            <video id="webcam" autoplay playsinline muted></video>
+        </div>
+        <div class="video-panel">
+            <h3>Detection Output</h3>
+            <img id="outputFrame" alt="Detection output will appear here">
+        </div>
+    </div>
+    <div class="detection-list">
+        <h3>Detected Objects</h3>
+        <table id="detectionTable">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Class</th>
+                    <th>Confidence</th>
+                    <th>Bounding Box</th>
+                </tr>
+            </thead>
+            <tbody id="detectionBody">
+                <tr>
+                    <td colspan="4" style="text-align:center; color:#666;">
+                        No detections yet
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <script>
+        let ws = null;
+        let stream = null;
+        let detecting = false;
+        let frameCount = 0;
+        let lastFpsTime = Date.now();
+        const video = document.getElementById("webcam");
+        const outputFrame = document.getElementById("outputFrame");
+        const statusBar = document.getElementById("statusBar");
+        const startBtn = document.getElementById("startBtn");
+        const stopBtn = document.getElementById("stopBtn");
+        const objectCount = document.getElementById("objectCount");
+        const fpsCount = document.getElementById("fpsCount");
+        const connStatus = document.getElementById("connStatus");
+        const detectionBody = document.getElementById("detectionBody");
+        async function startDetection() {
+            try {
+                // Request webcam access
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 640, height: 480 }
+                });
+                video.srcObject = stream;
+                // Connect WebSocket
+                const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+                ws = new WebSocket(`${protocol}//${location.host}/ws/detect`);
+                ws.onopen = () => {
+                    detecting = true;
+                    statusBar.textContent = "Connected — detecting objects...";
+                    statusBar.className = "status connected";
+                    connStatus.textContent = "Live";
+                    connStatus.style.color = "#4caf50";
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    sendFrame();
+                };
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    // Update output frame with annotated image
+                    if (data.frame) {
+                        outputFrame.src = data.frame;
+                    }
+                    // Update detection count
+                    objectCount.textContent = data.detections.length;
+                    // Update FPS
+                    frameCount++;
+                    const now = Date.now();
+                    if (now - lastFpsTime >= 1000) {
+                        fpsCount.textContent = frameCount;
+                        frameCount = 0;
+                        lastFpsTime = now;
+                    }
+                    // Update detection table
+                    updateTable(data.detections);
+                    // Send next frame
+                    if (detecting) {
+                        sendFrame();
+                    }
+                };
+                ws.onclose = () => {
+                    statusBar.textContent = "Disconnected";
+                    statusBar.className = "status";
+                    connStatus.textContent = "Off";
+                    connStatus.style.color = "#ff416c";
+                    detecting = false;
+                };
+                ws.onerror = () => {
+                    statusBar.textContent = "Connection error — is the server running?";
+                    statusBar.className = "status error";
+                };
+            } catch (err) {
+                statusBar.textContent = "Error: " + err.message;
+                statusBar.className = "status error";
+            }
+        }
+        function sendFrame() {
+            if (!detecting || !ws || ws.readyState !== WebSocket.OPEN) return;
+            const canvas = document.createElement("canvas");
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+            ws.send(dataUrl);
+        }
+        function stopDetection() {
+            detecting = false;
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+                video.srcObject = null;
+            }
+            statusBar.textContent = "Detection stopped";
+            statusBar.className = "status";
+            connStatus.textContent = "Idle";
+            connStatus.style.color = "#888";
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            objectCount.textContent = "0";
+            fpsCount.textContent = "0";
+        }
+        function updateTable(detections) {
+            if (detections.length === 0) {
+                detectionBody.innerHTML = `
+<tr>
+<td colspan="4" style="text-align:center; color:#666;">
+No objects detected in current frame
+</td>
+</tr>`;
+                return;
+            }
+            let html = "";
+            detections.forEach((det, i) => {
+                const pct = Math.round(det.confidence * 100);
+                html += `
+<tr>
+<td>${i + 1}</td>
+<td>${det.class}</td>
+<td>
+<span class="confidence-bar">
+<span class="confidence-fill" style="width:${pct}%"></span>
+</span>
+${pct}%
+</td>
+<td>(${Math.round(det.x1)}, ${Math.round(det.y1)}) → (${Math.round(det.x2)}, ${Math.round(det.y2)})</td>
+</tr>`;
+            });
+            detectionBody.innerHTML = html;
+        }
+    </script>
+</body>
+
+</html>
